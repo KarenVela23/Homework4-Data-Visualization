@@ -1,0 +1,329 @@
+---
+title: "Homework 4"
+author: "Karen Velasquez"
+output:
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: scroll
+---
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(janitor)
+library(scales)
+library(patchwork)
+library(ggradar)
+library(ggforce)
+
+
+arrests <- read_excel("Mass_Arrests.xlsx", sheet = "MSP DFS Arrests") |>
+  clean_names()
+
+covid <- read_csv("covid-19.csv")
+
+safe_cities <- read_excel("safeCities_ecoUI.xlsx", sheet = "safeCities_cleaned") |>
+  clean_names()
+```
+
+Row
+-----------------------------------------------------------------------
+
+### Male arrests are more common across racial groups
+
+```{r}
+race_sex_data <- arrests |>
+  filter(!is.na(race), !is.na(sex)) |>
+  filter(sex %in% c("F", "M")) |>
+  filter(race != "U") |>
+  mutate(
+    sex = recode(sex,
+                 "F" = "Female",
+                 "M" = "Male"),
+    race = recode(race,
+                  "B" = "Black",
+                  "H" = "Hispanic",
+                  "I" = "Native",
+                  "J" = "M.E./Indian",
+                  "O" = "Asian/Pacific",
+                  "W" = "White")
+  ) |>
+  count(race, sex) |>
+  group_by(race) |>
+  mutate(percent = n / sum(n)) |>
+  ungroup()
+
+ggplot(race_sex_data,
+       aes(x = race,
+           y = percent,
+           fill = sex)) +
+  geom_col(color = "white") +
+  scale_fill_manual(
+    values = c(
+      "Female" = "#6F4E9C",
+      "Male" = "#5DADE2"
+    )
+  ) +
+  scale_y_continuous(
+    labels = percent_format(),
+    breaks = seq(0, 1, 0.20)
+  ) +
+  labs(
+    title = "Percent of Arrests by Race and Sex",
+    x = "Race",
+    y = "Percent of Arrests",
+    fill = "Sex",
+    caption = "Source: Massachusetts arrests data"
+  ) +
+  theme_minimal() +
+  theme(
+  panel.grid = element_blank(),
+  axis.text.x = element_text(angle = 0, hjust = 0.5, size = 8),
+  plot.title = element_text(hjust = 0.5),
+  plot.caption = element_text(size = 7, hjust = 1),
+  plot.margin = margin(10, 10, 15, 10)
+)
+```
+
+Row
+-----------------------------------------------------------------------
+
+### COVID-19 cases and deaths followed different yearly patterns
+
+```{r}
+covid_year_data <- covid |>
+  group_by(year) |>
+  summarize(
+    avg_daily_cases = mean(daily_cases_mean, na.rm = TRUE),
+    avg_daily_deaths = mean(daily_deaths_mean, na.rm = TRUE)
+  ) |>
+  filter(!is.na(year),
+         avg_daily_cases > 0,
+         avg_daily_deaths > 0)
+
+ggplot(covid_year_data,
+       aes(x = avg_daily_cases,
+           y = avg_daily_deaths,
+           color = factor(year))) +
+  geom_point(
+    size = 5,
+    alpha = 0.9
+  ) +
+  geom_label(
+    aes(label = year),
+    nudge_y = 0.05,
+    size = 3.5,
+    label.size = 0.2,
+    fill = "white",
+    show.legend = FALSE
+  ) +
+  scale_color_manual(
+    values = c(
+      "2020" = "#6F4E9C",
+      "2021" = "#D9822B",
+      "2022" = "#4F6F8F",
+      "2023" = "#7A9E7E",
+      "2024" = "#C44E52"
+    )
+  ) +
+  scale_y_continuous(
+    breaks = seq(0, 2, 0.5),
+    limits = c(0, 2)
+  ) +
+  scale_x_continuous(
+    breaks = seq(0, 400, 50),
+    limits = c(0, 380)
+  ) +
+  labs(
+    title = "Average Daily COVID-19 Cases and Deaths by Year",
+    x = "Average Daily Cases",
+    y = "Average Daily Deaths",
+    caption = "Source: COVID-19 daily country data"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    panel.grid = element_blank(),
+    plot.caption = element_text(size = 7, hjust = 1),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 12),
+    plot.title = element_text(size = 14)
+  )
+```
+
+Row
+-----------------------------------------------------------------------
+
+### Arrest ages are fairly similar across sex groups, with males showing slightly more older outliers.
+
+```{r}
+age_sex_data <- arrests |>
+  filter(!is.na(age), !is.na(sex)) |>
+  filter(sex %in% c("F", "M")) |>
+  mutate(
+    sex = recode(sex,
+                 "F" = "Female",
+                 "M" = "Male")
+  )
+
+ggplot(age_sex_data,
+       aes(x = sex,
+           y = age,
+           fill = sex)) +
+  geom_boxplot(
+    alpha = 0.85,
+    outlier.alpha = 0.35,
+    outlier.size = 1.5
+  ) +
+  scale_fill_manual(
+    values = c(
+      "Female" = "#6F4E9C",
+      "Male" = "#5DADE2"
+    )
+  ) +
+  scale_y_continuous(
+    breaks = seq(10, 80, 10),
+    limits = c(10, 80)
+  ) +
+  labs(
+    title = "Age Distribution of Arrests by Sex",
+    x = "Sex",
+    y = "Age",
+    caption = "Source: Massachusetts arrests data"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    panel.grid = element_blank(),
+    plot.title = element_text(hjust = 0.5),
+    plot.caption = element_text(size = 7, hjust = 1)
+  )
+
+```
+
+
+Row {data-height=600}
+-----------------------------------------------------------------------
+
+
+### Original Radar Plot
+
+```{r}
+safe_avg <- safe_cities |>
+  select(city, starts_with("d_"), starts_with("h_"), starts_with("i_"),
+         starts_with("p_"), starts_with("e_")) |>
+  pivot_longer(
+    cols = -city,
+    names_to = "variable",
+    values_to = "value"
+  ) |>
+  mutate(
+    dimension = case_when(
+      str_starts(variable, "d_") ~ "DIGI",
+      str_starts(variable, "h_") ~ "HEALTH",
+      str_starts(variable, "i_") ~ "INFRA",
+      str_starts(variable, "p_") ~ "PERS",
+      str_starts(variable, "e_") ~ "ENVIR"
+    ),
+    dimension_full = case_when(
+      dimension == "DIGI" ~ "Digital",
+      dimension == "ENVIR" ~ "Environmental",
+      dimension == "HEALTH" ~ "Health",
+      dimension == "INFRA" ~ "Infrastructure",
+      dimension == "PERS" ~ "Personal"
+    ),
+    type = case_when(
+      str_detect(variable, "_in_") ~ "Input",
+      str_detect(variable, "_out_") ~ "Output"
+    )
+  ) |>
+  filter(type == "Input") |>
+  group_by(city, type, dimension, dimension_full) |>
+  summarize(
+    value = mean(value, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  filter(city %in% c(
+    "Singapore", "Tokyo", "London", "Sydney",
+    "Lagos", "Caracas", "Cairo", "Mumbai"
+  ))
+
+original_radar <- ggplot(safe_avg, aes(x = dimension, y = value)) +
+  geom_shape(
+    aes(group = city),
+    fill = "grey80",
+    color = "grey55"
+  ) +
+  coord_polar() +
+  facet_wrap(~ reorder(city, -value, median), ncol = 4) +
+  scale_y_continuous(
+    breaks = c(0, 50, 100),
+    limits = c(0, 100)
+  ) +
+  labs(
+    title = "Original Radar Plot",
+    x = "",
+    y = ""
+  ) +
+  theme_light() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 12),
+    axis.text.x = element_text(size = 5),
+    axis.text.y = element_text(size = 4),
+    strip.text = element_text(size = 7)
+  )
+
+original_radar
+```
+
+### Improved Lollipop Plot
+
+```{r}
+improved_lollipop <- ggplot(
+  safe_avg,
+  aes(x = value, y = city, color = dimension_full)
+) +
+  geom_segment(
+    aes(x = 0, xend = value, y = city, yend = city),
+    linewidth = 0.5,
+    alpha = 0.7
+  ) +
+  geom_point(size = 3) +
+  scale_x_continuous(
+    breaks = c(0, 25, 50, 75, 100),
+    limits = c(0, 100)
+  ) +
+  scale_color_manual(
+    values = c(
+      "Digital" = "#6F4E9C",
+      "Environmental" = "#5DADE2",
+      "Health" = "#D9822B",
+      "Infrastructure" = "#7A9E7E",
+      "Personal" = "#C44E52"
+    )
+  ) +
+  labs(
+    title = "Improved Lollipop Plot",
+    x = "Average score",
+    y = "",
+    color = "Dimension",
+    caption = "Source: Safe Cities data"
+  ) +
+  guides(color = guide_legend(nrow = 2, byrow = TRUE)) +
+  theme_minimal() +
+  theme(
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(hjust = 0.5, size = 12),
+    axis.text = element_text(size = 8),
+    axis.title = element_text(size = 9),
+    legend.position = "bottom",
+    legend.text = element_text(size = 7),
+    legend.title = element_text(size = 8),
+    plot.caption = element_text(size = 7, hjust = 1)
+  )
+
+improved_lollipop
+```
+
+
+
